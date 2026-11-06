@@ -1,0 +1,37 @@
+name: "Deploy main to production"
+# Validates against production, waits for approval, deploys, tags the release and opens back-sync pull requests.
+
+on:
+  push:
+    branches:
+      - "main"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_production:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: "Production"
+      approval_mode: "always"
+      approval_method: "environment-reviewers"
+      approval_environment: "Production-Approval"
+      destructive_mode: "none"
+      test_level: "RunLocalTests"
+      release_tag_prefix: "release-"
+    secrets: inherit
+
+  backsync:
+    needs: deploy_production
+    if: needs.deploy_production.outputs.deployed == 'true'
+    uses: ./.github/workflows/reusable-backsync.yml
+    with:
+      source_branch: "main"
+      target_branches: "release,uat,develop"
+    secrets: inherit

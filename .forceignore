@@ -1,0 +1,20 @@
+# Files and metadata the Salesforce CLI and the pipeline leave out of deployments.
+# The delta step also reads this file, so anything listed here is never deployed or deleted.
+# Add org-owned items here, for example report folders that users edit directly in production.
+
+package.xml
+
+# LWC configuration and tests
+**/jsconfig.json
+**/.eslintrc.json
+**/__tests__/**
+
+# Local tooling
+**/.sfdx/**
+**/.sf/**
+**/.vscode/**
+**/.DS_Store
+
+# Org-owned items (examples, uncomment and change as needed)
+# force-app/main/default/reports/[Folder name]/**
+# force-app/main/default/dashboards/[Folder name]/**

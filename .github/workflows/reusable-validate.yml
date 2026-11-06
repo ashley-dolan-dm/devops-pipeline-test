@@ -1,0 +1,94 @@
+name: "Reusable: validate"
+# Check-only deployment of the changed components to one org, with static analysis
+# and destructive change flagging. Called by the pull request workflows.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub environment holding the org's login details."
+        required: true
+        type: string
+      base_ref:
+        description: "Target branch of the pull request. The delta is taken from the merge base."
+        required: true
+        type: string
+      test_level:
+        description: "NoTestRun, RunLocalTests or RunAllTestsInOrg."
+        required: false
+        type: string
+        default: RunLocalTests
+      static_analysis:
+        description: "Run Code Analyzer on the changed source."
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      has_destructive:
+        description: "true if the change deletes components."
+        value: ${{ jobs.validate.outputs.has_destructive }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: write
+
+jobs:
+  validate:
+    name: "Validate against ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    outputs:
+      has_destructive: ${{ steps.delta.outputs.has_destructive }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up runner
+        uses: ./.github/actions/setup-runner
+        with:
+          code_analyzer: ${{ inputs.static_analysis }}
+
+      - name: Build delta
+        id: delta
+        uses: ./.github/actions/delta
+        with:
+          mode: merge-base
+          base_ref: ${{ inputs.base_ref }}
+
+      - name: Static analysis
+        if: inputs.static_analysis
+        uses: ./.github/actions/static-analysis
+        with:
+          upload_sarif: ${{ vars.CODE_SCANNING_ENABLED == 'true' }}
+
+      - name: Flag destructive changes
+        uses: ./.github/actions/destructive-check
+        with:
+          has_destructive: ${{ steps.delta.outputs.has_destructive }}
+
+      - name: Log in to ${{ inputs.environment }}
+        if: steps.delta.outputs.has_changes == 'true'
+        uses: ./.github/actions/sf-login-jwt
+        with:
+          client_id: ${{ secrets.SF_CONSUMER_KEY }}
+          jwt_key: ${{ secrets.SF_JWT_KEY }}
+          username: ${{ vars.SF_USERNAME }}
+          instance_url: ${{ vars.SF_INSTANCE_URL }}
+          alias: target
+
+      - name: Check-only deployment
+        if: steps.delta.outputs.has_changes == 'true'
+        env:
+          MODE: validate
+          TARGET_ORG: target
+          TEST_LEVEL: ${{ inputs.test_level }}
+        run: bash .github/scripts/sf-deploy.sh
+
+      - name: Nothing to validate
+        if: steps.delta.outputs.has_changes != 'true'
+        run: echo "No Salesforce changes in this pull request. Nothing to validate."

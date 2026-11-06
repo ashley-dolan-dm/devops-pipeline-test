@@ -1,0 +1,15 @@
+{
+  "name": "coe-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Salesforce source for coe-e2e",
+  "scripts": {
+    "prettier": "prettier --write \"**/*.{cls,trigger,js,html,json,xml,yml,yaml,md}\"",
+    "prettier:check": "prettier --check \"**/*.{cls,trigger,js,html,json,xml,yml,yaml,md}\""
+  },
+  "devDependencies": {
+    "@prettier/plugin-xml": "^3.4.1",
+    "prettier": "^3.3.3",
+    "prettier-plugin-apex": "^2.1.5"
+  }
+}

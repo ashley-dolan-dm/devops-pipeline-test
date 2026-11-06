@@ -1,0 +1,34 @@
+name: "Set up runner"
+description: "Installs Node.js, the Salesforce CLI and the plugins the pipeline uses."
+inputs:
+  code_analyzer:
+    description: "Set to true to install Java and Salesforce Code Analyzer."
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Java (for Code Analyzer)
+      if: inputs.code_analyzer == 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "17"
+
+    - name: Install Salesforce CLI and plugins
+      shell: bash
+      env:
+        CODE_ANALYZER: ${{ inputs.code_analyzer }}
+      run: |
+        npm install --global @salesforce/cli@latest
+        echo y | sf plugins install sfdx-git-delta@latest
+        if [ "$CODE_ANALYZER" = "true" ]; then
+          echo y | sf plugins install code-analyzer@latest
+        fi
+        sf --version
+        sf plugins

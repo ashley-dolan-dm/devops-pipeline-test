@@ -1,0 +1,5 @@
+**/staticresources/**
+.sf/
+.sfdx/
+delta/
+node_modules/

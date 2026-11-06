@@ -1,0 +1,272 @@
+name: "Reusable: deploy"
+# Deploys the changed components to one org in three steps:
+#   1. prepare: build the delta and run a check-only deployment (validation)
+#   2. approve: check approval, if this org needs it
+#   3. deploy:  quick deploy the validated job, so tests do not run twice
+#
+# The delta is taken from the deployed/<environment> tag, which marks the last commit
+# deployed to that org. A failed deployment does not move the tag, so the next run
+# picks up everything that has not reached the org yet.
+#
+# Approval works in one of two ways (approval_method):
+#   environment-reviewers  The approve job uses an approval environment with required
+#                          reviewers. Needs a public repository or GitHub Enterprise.
+#   manual-run             The run stops and an approver starts the "Approve and deploy"
+#                          workflow. Works on any plan. Approvers are listed in the
+#                          APPROVERS variable of the target environment.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub environment holding the org's login details."
+        required: true
+        type: string
+      approval_mode:
+        description: "none, always, or destructive (only when components are deleted)."
+        required: false
+        type: string
+        default: none
+      approval_method:
+        description: "environment-reviewers or manual-run."
+        required: false
+        type: string
+        default: environment-reviewers
+      approval_environment:
+        description: "Environment with the required reviewers (environment-reviewers method only)."
+        required: false
+        type: string
+        default: ""
+      destructive_mode:
+        description: "none, or warn (comment on the merged pull request when components are deleted)."
+        required: false
+        type: string
+        default: none
+      delta_mode:
+        description: "marker (changes since the deployed/<environment> tag), commit (changes since from_ref) or full."
+        required: false
+        type: string
+        default: marker
+      from_ref:
+        description: "Commit, tag or branch to diff from when delta_mode is commit."
+        required: false
+        type: string
+        default: ""
+      test_level:
+        description: "NoTestRun, RunLocalTests or RunAllTestsInOrg. Production needs RunLocalTests or RunAllTestsInOrg."
+        required: false
+        type: string
+        default: RunLocalTests
+      release_tag_prefix:
+        description: "If set, tag the deployed commit as <prefix><date>-<run number> (used for production)."
+        required: false
+        type: string
+        default: ""
+    outputs:
+      deployed:
+        description: "true if something was deployed."
+        value: ${{ jobs.deploy.outputs.deployed }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: "Validate for ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    outputs:
+      has_changes: ${{ steps.delta.outputs.has_changes }}
+      has_destructive: ${{ steps.delta.outputs.has_destructive }}
+      job_id: ${{ steps.validate.outputs.job_id }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up runner
+        uses: ./.github/actions/setup-runner
+
+      - name: Build delta
+        id: delta
+        uses: ./.github/actions/delta
+        with:
+          mode: ${{ inputs.delta_mode == 'full' && 'full' || 'commit' }}
+          from_sha: ${{ inputs.delta_mode == 'marker' && format('refs/tags/deployed/{0}', inputs.environment) || inputs.from_ref }}
+
+      - name: Keep the delta for the deploy job
+        if: steps.delta.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: delta-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: delta/
+          retention-days: 5
+
+      - name: Log in to ${{ inputs.environment }}
+        if: steps.delta.outputs.has_changes == 'true'
+        uses: ./.github/actions/sf-login-jwt
+        with:
+          client_id: ${{ secrets.SF_CONSUMER_KEY }}
+          jwt_key: ${{ secrets.SF_JWT_KEY }}
+          username: ${{ vars.SF_USERNAME }}
+          instance_url: ${{ vars.SF_INSTANCE_URL }}
+          alias: target
+
+      - name: Check-only deployment
+        id: validate
+        if: steps.delta.outputs.has_changes == 'true'
+        env:
+          MODE: validate
+          TARGET_ORG: target
+          TEST_LEVEL: ${{ inputs.test_level }}
+        run: bash .github/scripts/sf-deploy.sh
+
+  approve:
+    name: "Approval for ${{ inputs.environment }}"
+    needs: prepare
+    if: >-
+      needs.prepare.outputs.has_changes == 'true' &&
+      inputs.approval_method == 'environment-reviewers' && inputs.approval_environment != '' &&
+      (inputs.approval_mode == 'always' ||
+       (inputs.approval_mode == 'destructive' && needs.prepare.outputs.has_destructive == 'true'))
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.approval_environment }}
+    steps:
+      - name: Approved
+        run: echo "Deployment to ${{ inputs.environment }} approved."
+
+  approve_manual:
+    name: "Approval check for ${{ inputs.environment }}"
+    needs: prepare
+    if: >-
+      needs.prepare.outputs.has_changes == 'true' && inputs.approval_method == 'manual-run' &&
+      (inputs.approval_mode == 'always' ||
+       (inputs.approval_mode == 'destructive' && needs.prepare.outputs.has_destructive == 'true'))
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      approved: ${{ steps.check.outputs.approved }}
+    steps:
+      - name: Check who started the run
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          APPROVERS: ${{ vars.APPROVERS }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          LIST=",$(echo "$APPROVERS" | tr -d ' '),"
+          if [ "$EVENT" = "workflow_dispatch" ] && [[ "$LIST" == *",$ACTOR,"* ]]; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+            echo "Approved: $ACTOR is an approver for $TARGET_ENV."
+            exit 0
+          fi
+          echo "approved=false" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "::error::$ACTOR is not in the APPROVERS list for $TARGET_ENV."
+            exit 1
+          fi
+          {
+            echo "### Waiting for approval"
+            echo
+            echo "The changes are validated but not deployed to $TARGET_ENV."
+            echo "An approver ($APPROVERS) must run the **Approve and deploy** workflow for $TARGET_ENV."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::Not deployed. Waiting for an approver to run the Approve and deploy workflow for $TARGET_ENV."
+
+  deploy:
+    name: "Deploy to ${{ inputs.environment }}"
+    needs: [prepare, approve, approve_manual]
+    if: >-
+      always() && needs.prepare.result == 'success' && needs.prepare.outputs.has_changes == 'true' &&
+      (needs.approve.result == 'success' || needs.approve.result == 'skipped') &&
+      (needs.approve_manual.result == 'skipped' ||
+       (needs.approve_manual.result == 'success' && needs.approve_manual.outputs.approved == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    outputs:
+      deployed: ${{ steps.result.outputs.deployed }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up runner
+        uses: ./.github/actions/setup-runner
+
+      - name: Get the delta
+        uses: actions/download-artifact@v4
+        with:
+          name: delta-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: delta/
+
+      - name: Log in to ${{ inputs.environment }}
+        uses: ./.github/actions/sf-login-jwt
+        with:
+          client_id: ${{ secrets.SF_CONSUMER_KEY }}
+          jwt_key: ${{ secrets.SF_JWT_KEY }}
+          username: ${{ vars.SF_USERNAME }}
+          instance_url: ${{ vars.SF_INSTANCE_URL }}
+          alias: target
+
+      - name: Quick deploy the validated job
+        id: quick
+        continue-on-error: true
+        env:
+          MODE: quick
+          TARGET_ORG: target
+          JOB_ID: ${{ needs.prepare.outputs.job_id }}
+        run: bash .github/scripts/sf-deploy.sh
+
+      - name: Full deployment (if quick deploy was not possible)
+        id: full
+        if: steps.quick.outcome != 'success'
+        env:
+          MODE: deploy
+          TARGET_ORG: target
+          TEST_LEVEL: ${{ inputs.test_level }}
+        run: |
+          echo "::warning::Quick deploy was not possible (the validation may have expired, or ran without tests). Running a full deployment instead."
+          bash .github/scripts/sf-deploy.sh
+
+      - name: Record result
+        id: result
+        run: echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Move the deployed marker
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          RELEASE_PREFIX: ${{ inputs.release_tag_prefix }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "deployed/$TARGET_ENV" "$GITHUB_SHA"
+          git push -f origin "refs/tags/deployed/$TARGET_ENV"
+          if [ -n "$RELEASE_PREFIX" ]; then
+            TAG="${RELEASE_PREFIX}$(date -u +%Y%m%d)-${GITHUB_RUN_NUMBER}"
+            git tag -a "$TAG" -m "Deployed to $TARGET_ENV by run ${GITHUB_RUN_ID}" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG"
+            echo "Release tagged as \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Warn about deleted components
+        if: inputs.destructive_mode == 'warn' && needs.prepare.outputs.has_destructive == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          PR=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          BODY=$(mktemp)
+          {
+            echo "### Components deleted from ${TARGET_ENV}"
+            echo
+            python3 .github/scripts/summarise_manifest.py delta/destructiveChanges/destructiveChanges.xml "Deleted components"
+          } > "$BODY"
+          cat "$BODY" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR" ]; then
+            gh pr comment "$PR" --body-file "$BODY"
+          fi

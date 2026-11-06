@@ -1,0 +1,47 @@
+name: "Flag destructive changes"
+description: >
+  Adds a red label and a comment to the pull request when the delta deletes components,
+  so reviewers can see it before merging. Safe to run more than once on the same pull request.
+inputs:
+  has_destructive:
+    description: "Output of the delta action."
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Label and comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        HAS_DESTRUCTIVE: ${{ inputs.has_destructive }}
+        PR: ${{ github.event.pull_request.number }}
+        LABEL: "Destructive changes"
+      run: |
+        set -uo pipefail
+        if [ -z "${PR:-}" ]; then
+          exit 0
+        fi
+        if [ "$HAS_DESTRUCTIVE" != "true" ]; then
+          gh pr edit "$PR" --remove-label "$LABEL" >/dev/null 2>&1 || true
+          exit 0
+        fi
+        gh label create "$LABEL" --color B60205 --description "This pull request deletes Salesforce components" >/dev/null 2>&1 || true
+        gh pr edit "$PR" --add-label "$LABEL"
+        BODY=$(mktemp)
+        {
+          echo "<!-- destructive-changes -->"
+          echo "### This pull request deletes Salesforce components"
+          echo
+          echo "Check these deletions are intended before approving. Deletions cannot be undone with a redeploy."
+          echo
+          python3 .github/scripts/summarise_manifest.py delta/destructiveChanges/destructiveChanges.xml "Components to delete"
+        } > "$BODY"
+        # Update the existing comment if there is one, so repeat runs do not add more.
+        EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+          --jq '.[] | select(.body | startswith("<!-- destructive-changes -->")) | .id' | head -1)
+        if [ -n "$EXISTING" ]; then
+          gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -X PATCH -F body=@"$BODY" >/dev/null
+        else
+          gh pr comment "$PR" --body-file "$BODY"
+        fi

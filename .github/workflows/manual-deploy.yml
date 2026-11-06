@@ -1,0 +1,53 @@
+name: "Manual deploy to a sandbox"
+# Deploys any branch to a sandbox on request, for example to refresh a sandbox after it
+# has been rebuilt. Only orgs that need no approval are offered. Production is only
+# deployed from main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Sandbox to deploy to"
+        required: true
+        type: choice
+        options:
+          - "QA"
+      mode:
+        description: "full deploys everything in the branch. delta deploys changes since the 'from' ref."
+        required: true
+        type: choice
+        default: delta
+        options:
+          - delta
+          - full
+      from_ref:
+        description: "For delta: commit, tag or branch to diff from, for example origin/main"
+        required: false
+        type: string
+        default: "origin/main"
+      test_level:
+        description: "Tests to run"
+        required: true
+        type: choice
+        default: RunLocalTests
+        options:
+          - NoTestRun
+          - RunLocalTests
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: manual-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+      delta_mode: ${{ inputs.mode == 'full' && 'full' || 'commit' }}
+      from_ref: ${{ inputs.from_ref }}
+      test_level: ${{ inputs.test_level }}
+    secrets: inherit

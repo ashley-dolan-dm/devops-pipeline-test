@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <assignments>
+        <name>Set_Due_Date</name>
+        <label>Set Due Date</label>
+        <locationX>176</locationX>
+        <locationY>287</locationY>
+        <assignmentItems>
+            <assignToReference>$Record.Due_Date__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>DefaultDueDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+    <description>Sample flow for testing the CoE pipeline. Sets the due date from the priority when a request is created without one.</description>
+    <environments>Default</environments>
+    <formulas>
+        <name>DefaultDueDate</name>
+        <dataType>Date</dataType>
+        <expression>IF(ISBLANK({!$Record.Due_Date__c}), TODAY() + CASE(TEXT({!$Record.Priority__c}), &quot;High&quot;, 2, &quot;Medium&quot;, 5, 10), {!$Record.Due_Date__c})</expression>
+    </formulas>
+    <interviewLabel>CoE Sample Request Set Defaults {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>CoE Sample Request Set Defaults</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Set_Due_Date</targetReference>
+        </connector>
+        <object>CoE_Sample_Request__c</object>
+        <recordTriggerType>Create</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

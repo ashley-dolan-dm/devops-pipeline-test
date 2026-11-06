@@ -1,0 +1,36 @@
+name: "Deploy release"
+# Deploys to the regression org, then runs the regression tests.
+
+on:
+  push:
+    branches:
+      - "release"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_regression:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: "Regression"
+      approval_mode: "destructive"
+      approval_method: "environment-reviewers"
+      approval_environment: "Regression-Approval"
+      destructive_mode: "none"
+      test_level: "RunLocalTests"
+    secrets: inherit
+
+  regression:
+    needs: deploy_regression
+    if: needs.deploy_regression.outputs.deployed == 'true'
+    uses: ./.github/workflows/reusable-regression.yml
+    with:
+      environment: "Regression"
+      apex_test_suites: ${{ vars.APEX_TEST_SUITES }}
+    secrets: inherit

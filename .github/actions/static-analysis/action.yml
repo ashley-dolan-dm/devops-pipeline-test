@@ -1,0 +1,78 @@
+name: "Static analysis"
+description: >
+  Runs Salesforce Code Analyzer on the changed source only (the delta folder), so a pull
+  request is not blocked by older issues elsewhere in the code. Writes the results to the
+  run summary, and optionally uploads them to GitHub code scanning.
+inputs:
+  severity_threshold:
+    description: "Fail on issues at this severity or worse (1 Critical, 2 High, 3 Moderate, 4 Low, 5 Info)."
+    required: false
+    default: "2"
+  fail_on_violations:
+    description: "true to fail the job when issues at or above the threshold are found, false to report only."
+    required: false
+    default: "true"
+  upload_sarif:
+    description: "true to upload results to GitHub code scanning (needs GitHub Advanced Security on private repositories)."
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Run Code Analyzer on changed source
+      id: scan
+      shell: bash
+      env:
+        THRESHOLD: ${{ inputs.severity_threshold }}
+        SOURCE_DIR: "force-app"
+      run: |
+        set -uo pipefail
+        TARGET="delta/$SOURCE_DIR"
+        if [ ! -d "$TARGET" ]; then
+          echo "No changed source to scan."
+          echo "scanned=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        sf code-analyzer run \
+          --workspace "$TARGET" \
+          --rule-selector Recommended \
+          --output-file "$RUNNER_TEMP/code-analyzer.json" \
+          --output-file "$RUNNER_TEMP/code-analyzer.sarif" \
+          --view table || true
+        echo "scanned=true" >> "$GITHUB_OUTPUT"
+
+    - name: Summarise results
+      id: evaluate
+      if: steps.scan.outputs.scanned == 'true'
+      shell: bash
+      env:
+        THRESHOLD: ${{ inputs.severity_threshold }}
+      run: |
+        python3 .github/scripts/summarise_scan.py "$RUNNER_TEMP/code-analyzer.json" "$THRESHOLD" >> "$GITHUB_STEP_SUMMARY"
+        BLOCKING=$(python3 .github/scripts/summarise_scan.py "$RUNNER_TEMP/code-analyzer.json" "$THRESHOLD" --count)
+        echo "blocking=$BLOCKING" >> "$GITHUB_OUTPUT"
+        echo "Issues at or above the threshold: $BLOCKING"
+
+    - name: Upload to code scanning
+      if: inputs.upload_sarif == 'true' && steps.scan.outputs.scanned == 'true'
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ runner.temp }}/code-analyzer.sarif
+        category: salesforce-code-analyzer
+
+    - name: Apply the gate
+      if: steps.scan.outputs.scanned == 'true'
+      shell: bash
+      env:
+        BLOCKING: ${{ steps.evaluate.outputs.blocking }}
+        ENFORCE: ${{ inputs.fail_on_violations }}
+        THRESHOLD: ${{ inputs.severity_threshold }}
+      run: |
+        if [ "${BLOCKING:-0}" != "0" ]; then
+          if [ "$ENFORCE" = "true" ]; then
+            echo "::error::Code Analyzer found $BLOCKING issue(s) at severity $THRESHOLD or worse. See the run summary."
+            exit 1
+          fi
+          echo "::warning::Code Analyzer found $BLOCKING issue(s) at severity $THRESHOLD or worse. Reporting only, the gate is switched off."
+        fi

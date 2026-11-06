@@ -1,0 +1,28 @@
+name: "Deploy develop"
+# Deploys merged work to QA, then to Integration (if used).
+
+on:
+  push:
+    branches:
+      - "develop"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_qa:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: "QA"
+      approval_mode: "none"
+      approval_method: "environment-reviewers"
+      approval_environment: ""
+      destructive_mode: "none"
+      test_level: "RunLocalTests"
+    secrets: inherit
+

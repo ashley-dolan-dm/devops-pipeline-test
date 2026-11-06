@@ -1,0 +1,27 @@
+# Salesforce CLI
+.sf/
+.sfdx/
+.localdevserver/
+deploy-options.json
+
+# Pipeline output
+delta/
+test-results/
+playwright-report/
+
+# Keys and secrets. Never commit these.
+*.key
+*.pem
+*.crt
+*.p12
+.env
+.env.*
+!.env.example
+
+# Dependencies and editors
+node_modules/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

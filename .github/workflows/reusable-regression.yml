@@ -1,0 +1,132 @@
+name: "Reusable: regression"
+# Runs the regression tests against one org: Apex test suites (or all local tests), then
+# the Playwright suite if it is switched on with the PLAYWRIGHT_ENABLED repository variable.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub environment holding the org's login details."
+        required: true
+        type: string
+      apex_test_suites:
+        description: "Comma-separated Apex test suite names. Leave blank to run all local tests."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  apex:
+    name: "Apex tests in ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up runner
+        uses: ./.github/actions/setup-runner
+
+      - name: Log in to ${{ inputs.environment }}
+        uses: ./.github/actions/sf-login-jwt
+        with:
+          client_id: ${{ secrets.SF_CONSUMER_KEY }}
+          jwt_key: ${{ secrets.SF_JWT_KEY }}
+          username: ${{ vars.SF_USERNAME }}
+          instance_url: ${{ vars.SF_INSTANCE_URL }}
+          alias: target
+
+      - name: Run Apex tests
+        env:
+          SUITES: ${{ inputs.apex_test_suites }}
+        run: |
+          set -uo pipefail
+          mkdir -p test-results/apex
+          if [ -z "${SUITES// /}" ]; then
+            echo "No suites given. Running all local tests."
+            ARGS=(--test-level RunLocalTests)
+          else
+            echo "Running suites: $SUITES"
+            ARGS=(--suite-names "$SUITES")
+          fi
+          sf apex run test "${ARGS[@]}" \
+            --target-org target \
+            --code-coverage \
+            --result-format junit \
+            --output-dir test-results/apex \
+            --wait 90
+          RESULT=$?
+          if [ -f test-results/apex/test-result-summary.md ]; then
+            cat test-results/apex/test-result-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $RESULT
+
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-results-${{ inputs.environment }}-${{ github.run_id }}
+          path: test-results/apex/
+          retention-days: 30
+
+  playwright:
+    name: "Playwright tests in ${{ inputs.environment }}"
+    needs: apex
+    if: vars.PLAYWRIGHT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: tests/regression
+    env:
+      CI: "true"
+      # The suite logs each test user in with JWT, using the same app as the pipeline.
+      SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+      SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
+      SF_LOGIN_URL: ${{ vars.SF_INSTANCE_URL }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Choose the environment and pass the env file keys
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          # The suite's env files are named after the GitHub environment in lower case,
+          # for example .env.regression for the Regression environment.
+          echo "TEST_ENV=$(echo "$TARGET_ENV" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          # Pass on every DOTENV_PRIVATE_KEY_<ENV>_<WORKSTREAM> secret, masked.
+          echo "$ALL_SECRETS" | jq -r 'to_entries[] | select(.key | startswith("DOTENV_PRIVATE_KEY_")) | "\(.key)\t\(.value)"' |
+          while IFS=$'\t' read -r name value; do
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Install the suite and browsers
+        run: |
+          npm ci
+          npx playwright install --with-deps ${{ vars.PLAYWRIGHT_BROWSERS || 'chromium' }}
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ inputs.environment }}-${{ github.run_id }}
+          path: |
+            tests/regression/playwright-report/
+            tests/regression/test-results/
+          retention-days: 30

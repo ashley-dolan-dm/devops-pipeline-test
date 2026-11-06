@@ -1,0 +1,75 @@
+name: "Reusable: back-sync"
+# Opens pull requests to bring a branch (usually main) back into the lower branches,
+# so hotfixes and release changes are not lost. Skips a branch that is already up to
+# date or already has an open back-sync pull request.
+#
+# Pull requests opened with the default GITHUB_TOKEN do not start other workflows, so the
+# pull request checks will not run on them. Add a BACKSYNC_TOKEN secret (a GitHub App
+# token or fine-grained token with contents and pull request write access) to fix this.
+
+on:
+  workflow_call:
+    inputs:
+      source_branch:
+        description: "Branch to bring back, for example main."
+        required: true
+        type: string
+      target_branches:
+        description: "Comma-separated branches to open pull requests into."
+        required: true
+        type: string
+    secrets:
+      BACKSYNC_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  backsync:
+    name: "Back-sync ${{ inputs.source_branch }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open back-sync pull requests
+        env:
+          GH_TOKEN: ${{ secrets.BACKSYNC_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE: ${{ inputs.source_branch }}
+          TARGET_LIST: ${{ inputs.target_branches }}
+          USING_DEFAULT_TOKEN: ${{ secrets.BACKSYNC_TOKEN == '' }}
+        run: |
+          set -uo pipefail
+          if [ "$USING_DEFAULT_TOKEN" = "true" ]; then
+            echo "::warning::BACKSYNC_TOKEN is not set. Back-sync pull requests will not trigger the pull request checks. See the DevOps Set-up guide."
+          fi
+          ERRORS=0
+          IFS=',' read -ra LIST <<< "$TARGET_LIST"
+          for raw in "${LIST[@]}"; do
+            TARGET=$(echo "$raw" | xargs)
+            [ -z "$TARGET" ] && continue
+            AHEAD=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${TARGET}...${SOURCE}" --jq '.ahead_by' 2>/dev/null || echo "error")
+            if [ "$AHEAD" = "error" ]; then
+              echo "::warning::Could not compare ${TARGET} with ${SOURCE}. Does the branch exist?"
+              ERRORS=$((ERRORS + 1))
+              continue
+            fi
+            if [ "$AHEAD" = "0" ]; then
+              echo "${TARGET} already has everything in ${SOURCE}. Skipping."
+              continue
+            fi
+            OPEN=$(gh pr list --base "$TARGET" --head "$SOURCE" --state open --json url --jq '.[0].url // empty')
+            if [ -n "$OPEN" ]; then
+              echo "Back-sync pull request already open for ${TARGET}: ${OPEN}"
+              continue
+            fi
+            if gh pr create --base "$TARGET" --head "$SOURCE" \
+                 --title "Back-sync: ${SOURCE} into ${TARGET}" \
+                 --body "Brings ${AHEAD} commit(s) from \`${SOURCE}\` back into \`${TARGET}\` after a production deployment. Resolve any conflicts before merging. Opened by the back-sync workflow."; then
+              echo "Opened back-sync pull request for ${TARGET}."
+            else
+              echo "::error::Could not open the back-sync pull request for ${TARGET}."
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          [ "$ERRORS" -eq 0 ]

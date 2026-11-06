@@ -1,0 +1,51 @@
+name: "Log in to Salesforce (JWT)"
+description: >
+  Logs in to a Salesforce org with the JWT bearer flow. The private key is written to a
+  temporary file outside the workspace, readable only by the runner user, and deleted
+  as soon as the login step ends, whether it passes or fails.
+inputs:
+  client_id:
+    description: "Consumer key of the connected app or external client app (SF_CONSUMER_KEY secret)."
+    required: true
+  jwt_key:
+    description: "Private key in PEM format (SF_JWT_KEY secret)."
+    required: true
+  username:
+    description: "Salesforce username of the integration user (SF_USERNAME variable)."
+    required: true
+  instance_url:
+    description: "Login URL (SF_INSTANCE_URL variable), for example https://test.salesforce.com or the My Domain URL."
+    required: true
+  alias:
+    description: "Alias for the org in later steps."
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Log in with JWT
+      shell: bash
+      env:
+        SF_CLIENT_ID: ${{ inputs.client_id }}
+        SF_JWT_KEY: ${{ inputs.jwt_key }}
+        SF_LOGIN_USER: ${{ inputs.username }}
+        SF_LOGIN_URL: ${{ inputs.instance_url }}
+        SF_ALIAS: ${{ inputs.alias }}
+      run: |
+        set -euo pipefail
+        for v in SF_CLIENT_ID SF_JWT_KEY SF_LOGIN_USER SF_LOGIN_URL; do
+          if [ -z "${!v}" ]; then
+            echo "::error::$v is empty. Check the secrets and variables for this GitHub environment (see the DevOps Set-up guide)."
+            exit 1
+          fi
+        done
+        KEY_FILE="$RUNNER_TEMP/jwt-${SF_ALIAS}.key"
+        trap 'rm -f "$KEY_FILE"' EXIT
+        umask 077
+        printf '%s\n' "$SF_JWT_KEY" > "$KEY_FILE"
+        sf org login jwt \
+          --client-id "$SF_CLIENT_ID" \
+          --jwt-key-file "$KEY_FILE" \
+          --username "$SF_LOGIN_USER" \
+          --instance-url "$SF_LOGIN_URL" \
+          --alias "$SF_ALIAS"
+        echo "Logged in to the org as alias $SF_ALIAS."

@@ -1,0 +1,27 @@
+name: "Deploy uat"
+# Deploys to UAT once the approval (if set) is given.
+
+on:
+  push:
+    branches:
+      - "uat"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_uat:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: "UAT"
+      approval_mode: "always"
+      approval_method: "environment-reviewers"
+      approval_environment: "UAT-Approval"
+      destructive_mode: "none"
+      test_level: "RunLocalTests"
+    secrets: inherit
