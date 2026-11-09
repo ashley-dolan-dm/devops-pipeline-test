@@ -1,0 +1,39 @@
+name: "Build the delta package"
+description: >
+  Works out what has changed and builds a package of only those components, using
+  sfdx-git-delta. Diffs from the merge base (pull requests), from a given commit
+  (pushes) or builds a full package from source. Paths in .forceignore are left out.
+inputs:
+  mode:
+    description: "merge-base, commit or full."
+    required: true
+  base_ref:
+    description: "Branch to diff against when mode is merge-base, for example develop."
+    required: false
+    default: ""
+  from_sha:
+    description: "Commit to diff from when mode is commit, usually github.event.before."
+    required: false
+    default: ""
+outputs:
+  has_changes:
+    description: "true if there is anything to deploy."
+    value: ${{ steps.delta.outputs.has_changes }}
+  has_destructive:
+    description: "true if destructiveChanges.xml lists at least one component."
+    value: ${{ steps.delta.outputs.has_destructive }}
+  from_sha:
+    description: "The commit the delta was taken from."
+    value: ${{ steps.delta.outputs.from_sha }}
+runs:
+  using: composite
+  steps:
+    - name: Build delta
+      id: delta
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        BASE_REF: ${{ inputs.base_ref }}
+        FROM_SHA: ${{ inputs.from_sha }}
+        SOURCE_DIR: "force-app"
+      run: bash .github/scripts/delta.sh

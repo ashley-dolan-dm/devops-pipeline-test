@@ -5,7 +5,7 @@
 deploy-options.json
 
 # Pipeline output
-delta/
+/delta/
 test-results/
 playwright-report/
 
