@@ -1,5 +1,19 @@
 @IsTest
 private class CoESampleRequestServiceTest {
+    // CoESampleRequestService reads and updates in user mode, so the tests that call it
+    // first give the running user the CoE Sample App permission set. During a deployment
+    // the tests run as the deploying user, who may not have access to the new fields.
+    private static void grantAppAccess() {
+        Id permissionSetId = [SELECT Id FROM PermissionSet WHERE Name = 'CoE_Sample_App' LIMIT 1].Id;
+        Integer assigned = [
+            SELECT COUNT() FROM PermissionSetAssignment
+            WHERE AssigneeId = :UserInfo.getUserId() AND PermissionSetId = :permissionSetId
+        ];
+        if (assigned == 0) {
+            insert new PermissionSetAssignment(AssigneeId = UserInfo.getUserId(), PermissionSetId = permissionSetId);
+        }
+    }
+
     @IsTest
     static void newRequestGetsDefaults() {
         CoE_Sample_Request__c request = new CoE_Sample_Request__c(Priority__c = 'High');
@@ -25,6 +39,10 @@ private class CoESampleRequestServiceTest {
 
     @IsTest
     static void closeRequestsSetsDone() {
+        User runningUser = new User(Id = UserInfo.getUserId());
+        System.runAs(runningUser) {
+            grantAppAccess();
+        }
         List<CoE_Sample_Request__c> requests = new List<CoE_Sample_Request__c>{
             new CoE_Sample_Request__c(Priority__c = 'Low'),
             new CoE_Sample_Request__c(Priority__c = 'Medium')
@@ -32,7 +50,9 @@ private class CoESampleRequestServiceTest {
         insert requests;
 
         Test.startTest();
-        CoESampleRequestService.closeRequests(new List<Id>{ requests[0].Id, requests[1].Id });
+        System.runAs(runningUser) {
+            CoESampleRequestService.closeRequests(new List<Id>{ requests[0].Id, requests[1].Id });
+        }
         Test.stopTest();
 
         for (CoE_Sample_Request__c request : [SELECT Status__c FROM CoE_Sample_Request__c]) {
