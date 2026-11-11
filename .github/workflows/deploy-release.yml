@@ -20,8 +20,8 @@ jobs:
     with:
       environment: "Regression"
       approval_mode: "destructive"
-      approval_method: "environment-reviewers"
-      approval_environment: "Regression-Approval"
+      approval_method: "manual-run"
+      approval_environment: ""
       destructive_mode: "none"
       test_level: "RunLocalTests"
     secrets: inherit

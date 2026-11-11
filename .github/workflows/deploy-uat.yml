@@ -20,8 +20,8 @@ jobs:
     with:
       environment: "UAT"
       approval_mode: "always"
-      approval_method: "environment-reviewers"
-      approval_environment: "UAT-Approval"
+      approval_method: "manual-run"
+      approval_environment: ""
       destructive_mode: "none"
       test_level: "RunLocalTests"
     secrets: inherit
