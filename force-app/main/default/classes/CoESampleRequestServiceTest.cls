@@ -23,7 +23,7 @@ private class CoESampleRequestServiceTest {
         Test.stopTest();
 
         request = [SELECT Status__c, Due_Date__c FROM CoE_Sample_Request__c WHERE Id = :request.Id];
-        Assert.areEqual('Broken', request.Status__c, 'Status should default to New');
+        Assert.areEqual('New', request.Status__c, 'Status should default to New');
         Assert.areEqual(Date.today().addDays(2), request.Due_Date__c, 'High priority should be due in 2 days');
     }
 
