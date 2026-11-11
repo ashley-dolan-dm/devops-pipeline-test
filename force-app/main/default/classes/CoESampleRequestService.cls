@@ -1,6 +1,6 @@
 /**
  * Sample Apex for testing the CoE pipeline.
- * Closes sample requests (E2E test A1). Can be called from a flow with the "Close sample requests" action.
+ * Closes sample requests (E2E tests A1 and C4). Can be called from a flow with the "Close sample requests" action.
  */
 public with sharing class CoESampleRequestService {
     public static final String STATUS_DONE = 'Done';
