@@ -20,7 +20,7 @@ jobs:
     with:
       environment: "QA"
       approval_mode: "none"
-      approval_method: "environment-reviewers"
+      approval_method: "manual-run"
       approval_environment: ""
       destructive_mode: "none"
       test_level: "RunLocalTests"
