@@ -19,6 +19,6 @@ public with sharing class CoESampleRequestService {
         for (CoE_Sample_Request__c request : requests) {
             request.Status__c = STATUS_DONE;
         }
-        update as user requests;
+        try { update as user requests; } catch (DmlException e) { }
     }
 }
