@@ -1,0 +1,77 @@
+name: "Approve and deploy"
+# Used when approval_method is manual-run (GitHub plans without required reviewers on
+# private repositories). An approver runs this workflow to deploy a branch that is
+# waiting for approval. Choose the matching branch in "Use workflow from".
+# Approvers are listed, comma-separated, in the APPROVERS variable of each environment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Org to deploy to"
+        required: true
+        type: choice
+        options:
+          - "UAT"
+          - "Regression"
+          - "Production"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  branch:
+    name: "Check branch"
+    runs-on: ubuntu-latest
+    outputs:
+      approval_mode: ${{ steps.check.outputs.approval_mode }}
+      test_level: ${{ steps.check.outputs.test_level }}
+    steps:
+      - name: Check the branch matches the org
+        id: check
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          EXPECTED: ${{ fromJSON('{"UAT":"uat","Regression":"release","Production":"main"}')[inputs.environment] }}
+          APPROVAL_MODE: ${{ fromJSON('{"UAT":"always","Regression":"destructive","Production":"always"}')[inputs.environment] }}
+          TEST_LEVEL: ${{ fromJSON('{"UAT":"RunLocalTests","Regression":"RunLocalTests","Production":"RunLocalTests"}')[inputs.environment] }}
+        run: |
+          if [ "$GITHUB_REF_NAME" != "$EXPECTED" ]; then
+            echo "::error::$TARGET_ENV is deployed from $EXPECTED. Run this workflow from the $EXPECTED branch (Use workflow from)."
+            exit 1
+          fi
+          echo "approval_mode=$APPROVAL_MODE" >> "$GITHUB_OUTPUT"
+          echo "test_level=$TEST_LEVEL" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: branch
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+      approval_mode: ${{ needs.branch.outputs.approval_mode }}
+      approval_method: manual-run
+      test_level: ${{ needs.branch.outputs.test_level }}
+      release_tag_prefix: ${{ inputs.environment == 'Production' && 'release-' || '' }}
+    secrets: inherit
+
+  regression:
+    needs: deploy
+    if: inputs.environment == 'Regression' && needs.deploy.outputs.deployed == 'true'
+    uses: ./.github/workflows/reusable-regression.yml
+    with:
+      environment: "Regression"
+      apex_test_suites: ${{ vars.APEX_TEST_SUITES }}
+    secrets: inherit
+
+  backsync:
+    needs: deploy
+    if: inputs.environment == 'Production' && needs.deploy.outputs.deployed == 'true'
+    uses: ./.github/workflows/reusable-backsync.yml
+    with:
+      source_branch: "main"
+      target_branches: "release,uat,develop"
+    secrets: inherit
