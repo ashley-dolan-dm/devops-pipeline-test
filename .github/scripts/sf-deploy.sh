@@ -23,6 +23,7 @@ case "$MODE" in
           --test-level "$TEST_LEVEL" --ignore-conflicts --async --json)
     if [ -f "$DESTRUCTIVE" ] && grep -q "<members>" "$DESTRUCTIVE"; then
       ARGS+=(--post-destructive-changes "$DESTRUCTIVE")
+      ARGS+=(--ignore-warnings)
     fi
     if [ "$MODE" = "validate" ]; then
       ARGS+=(--dry-run)
