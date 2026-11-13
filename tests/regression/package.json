@@ -1,0 +1,26 @@
+{
+  "name": "coe-e2e-regression",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright regression suite for coe-e2e-regression",
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list",
+    "report": "playwright show-report",
+    "discover": "playwright test -c playwright.utils.config.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.2.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.0"
+  },
+  "dependencies": {
+    "@dotenvx/dotenvx": "^1.75.1",
+    "jsforce": "^3.11.0"
+  }
+}
