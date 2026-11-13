@@ -9,6 +9,8 @@
  * records the tests create through the UI. Keep the values in step with
  * tests/SAMPLE/test-data/test-env-vars.ts.
  */
+// Seed data is test infrastructure run by the admin role, so it runs in system mode on purpose.
+@SuppressWarnings('PMD.ApexCRUDViolation')
 public with sharing class Regression_SAMPLE_Data {
     public static final String PREFIX = 'REG-SAMPLE-';
 
