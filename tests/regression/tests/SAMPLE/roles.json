@@ -1,0 +1,13 @@
+[
+  {
+    "name": "admin",
+    "login": "jwt",
+    "api": true,
+    "description": "System administrator. Runs the seed and API calls."
+  },
+  {
+    "name": "standard",
+    "login": "jwt",
+    "description": "Standard user with the CoE Sample App permission set."
+  }
+]

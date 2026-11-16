@@ -41,6 +41,10 @@
         <editHeading>true</editHeading>
         <label>Description</label>
         <layoutColumns>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>F2_Temp__c</field>
+            </layoutItems>
         </layoutColumns>
         <style>OneColumn</style>
     </layoutSections>
