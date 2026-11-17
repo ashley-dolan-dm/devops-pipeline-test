@@ -1,10 +1,17 @@
 /**
  * Sample Apex for testing the CoE pipeline.
- * Closes sample requests (E2E tests A1 and C4). Can be called from a flow with the "Close sample requests" action.
+ * Closes sample requests. Can be called from a flow with the "Close sample requests" action.
  */
 public with sharing class CoESampleRequestService {
+    /** Status a request has once it is closed. */
     public static final String STATUS_DONE = 'Done';
 
+    /**
+     * Sets the status of the given sample requests to Done.
+     * Runs in user mode, so the running user needs access to the object and fields
+     * (the CoE Sample App permission set gives it).
+     * @param requestIds IDs of the requests to close. Null or empty does nothing.
+     */
     @InvocableMethod(label='Close sample requests' description='Sets the status of the given sample requests to Done.')
     public static void closeRequests(List<Id> requestIds) {
         if (requestIds == null || requestIds.isEmpty()) {
@@ -22,6 +29,3 @@ public with sharing class CoESampleRequestService {
         update as user requests;
     }
 }
-// F1 hotfix test
-// P4 test
-// P4 fix
