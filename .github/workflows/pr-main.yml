@@ -19,7 +19,7 @@ concurrency:
 jobs:
   source:
     name: "Check source branch"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check the pull request comes from an allowed branch
         env:
@@ -46,7 +46,7 @@ jobs:
   checks:
     name: "PR checks passed"
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - source
       - validate_main

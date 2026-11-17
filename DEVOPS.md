@@ -15,7 +15,9 @@ The full guide is the DevOps Set-up Guide in the CoE documents ([DOCUMENT LOCATI
 | `main` | Production, after approval | Pull request from `release` or a `hotfix/*` branch |
 | `hotfix/*` | Nowhere directly | Branch from `main`, pull request back into `main` |
 
-After each production deployment the pipeline tags the release and opens back-sync pull requests into `release`, `uat`, `develop`. Merge them promptly.
+Branch names matter. Pull requests into `develop` must come from one of: feature/*, bugfix/*, main. Any other branch fails the **Check source branch** check.
+
+After each push to `main` the pipeline deploys to production (after approval), tags the release and opens back-sync pull requests into `release`, `uat`, `develop`. Merge them promptly.
 
 ## Making a change
 
@@ -31,6 +33,16 @@ After each production deployment the pipeline tags the release and opens back-sy
 - Static analysis (Salesforce Code Analyzer) on the changed files only.
 - Check-only deployment of the changed components, with tests.
 - A red **Destructive changes** label if the change deletes components.
+
+Checks belong to the commit, not the pull request. Use one branch per pull request, or a failed check from one pull request will show on the other too.
+
+## Useful commands
+
+```bash
+gh pr checks <number> --watch            # wait for a pull request's checks
+gh run list --branch develop --limit 1   # latest deployment run on a branch
+git fetch --tags --force                 # see the deployed/<org> markers the pipeline moves
+```
 
 ## Workflows
 
