@@ -21,12 +21,12 @@ permissions:
 jobs:
   apex:
     name: "Apex tests in ${{ inputs.environment }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: ${{ inputs.environment }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up runner
         uses: ./.github/actions/setup-runner
@@ -67,7 +67,7 @@ jobs:
 
       - name: Keep the test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: apex-results-${{ inputs.environment }}-${{ github.run_id }}
           path: test-results/apex/
@@ -77,7 +77,7 @@ jobs:
     name: "Playwright tests in ${{ inputs.environment }}"
     needs: apex
     if: vars.PLAYWRIGHT_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: ${{ inputs.environment }}
     defaults:
@@ -91,11 +91,12 @@ jobs:
       SF_LOGIN_URL: ${{ vars.SF_INSTANCE_URL }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: "22"
 
       - name: Choose the environment and pass the env file keys
@@ -123,7 +124,7 @@ jobs:
 
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ inputs.environment }}-${{ github.run_id }}
           path: |

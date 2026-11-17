@@ -3,9 +3,9 @@ name: "Reusable: back-sync"
 # so hotfixes and release changes are not lost. Skips a branch that is already up to
 # date or already has an open back-sync pull request.
 #
-# Pull requests opened with the default GITHUB_TOKEN do not start other workflows, so the
-# pull request checks will not run on them. Add a BACKSYNC_TOKEN secret (a GitHub App
-# token or fine-grained token with contents and pull request write access) to fix this.
+# The pull request checks normally run on back-sync pull requests (seen in testing, 2026-11).
+# If a back-sync pull request ever shows no "PR checks passed", add a BACKSYNC_TOKEN secret
+# (a GitHub App token or fine-grained token with contents and pull request write access).
 
 on:
   workflow_call:
@@ -29,7 +29,7 @@ permissions:
 jobs:
   backsync:
     name: "Back-sync ${{ inputs.source_branch }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Open back-sync pull requests
         env:
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ "$USING_DEFAULT_TOKEN" = "true" ]; then
-            echo "::warning::BACKSYNC_TOKEN is not set. Back-sync pull requests will not trigger the pull request checks. See the DevOps Set-up guide."
+            echo "Using the default token. If a back-sync pull request shows no \"PR checks passed\", add a BACKSYNC_TOKEN secret (see the DevOps Set-up guide)."
           fi
           ERRORS=0
           IFS=',' read -ra LIST <<< "$TARGET_LIST"
