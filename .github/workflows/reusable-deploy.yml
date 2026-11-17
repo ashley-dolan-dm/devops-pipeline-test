@@ -74,24 +74,43 @@ permissions:
 jobs:
   prepare:
     name: "Validate for ${{ inputs.environment }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: ${{ inputs.environment }}
     outputs:
-      has_changes: ${{ steps.delta.outputs.has_changes }}
-      has_destructive: ${{ steps.delta.outputs.has_destructive }}
+      has_changes: ${{ steps.delta.outputs.has_changes || 'false' }}
+      has_destructive: ${{ steps.delta.outputs.has_destructive || 'false' }}
       job_id: ${{ steps.validate.outputs.job_id }}
     steps:
+      - name: Check the environment is set up
+        id: ready
+        env:
+          KEY: ${{ secrets.SF_CONSUMER_KEY }}
+          JWT: ${{ secrets.SF_JWT_KEY }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          # Runs started before configure-github has set up the environment (for example
+          # the first push to the branches) stop here quietly instead of failing at login.
+          if [ -z "$KEY" ] || [ -z "$JWT" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$TARGET_ENV is not set up yet (no SF_CONSUMER_KEY or SF_JWT_KEY secret). Nothing deployed. Run configure-github, then re-run this workflow."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out
-        uses: actions/checkout@v4
+        if: steps.ready.outputs.ready == 'true'
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up runner
+        if: steps.ready.outputs.ready == 'true'
         uses: ./.github/actions/setup-runner
 
       - name: Build delta
         id: delta
+        if: steps.ready.outputs.ready == 'true'
         uses: ./.github/actions/delta
         with:
           mode: ${{ inputs.delta_mode == 'full' && 'full' || 'commit' }}
@@ -99,7 +118,7 @@ jobs:
 
       - name: Keep the delta for the deploy job
         if: steps.delta.outputs.has_changes == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: delta-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: delta/
@@ -125,27 +144,28 @@ jobs:
         run: bash .github/scripts/sf-deploy.sh
 
   approve:
-    name: "Approval for ${{ inputs.environment }}"
+    # Fixed names: GitHub does not fill in expressions in the name of a skipped job.
+    name: "Approval (reviewers)"
     needs: prepare
     if: >-
       needs.prepare.outputs.has_changes == 'true' &&
       inputs.approval_method == 'environment-reviewers' && inputs.approval_environment != '' &&
       (inputs.approval_mode == 'always' ||
        (inputs.approval_mode == 'destructive' && needs.prepare.outputs.has_destructive == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ inputs.approval_environment }}
     steps:
       - name: Approved
         run: echo "Deployment to ${{ inputs.environment }} approved."
 
   approve_manual:
-    name: "Approval check for ${{ inputs.environment }}"
+    name: "Approval (manual run)"
     needs: prepare
     if: >-
       needs.prepare.outputs.has_changes == 'true' && inputs.approval_method == 'manual-run' &&
       (inputs.approval_mode == 'always' ||
        (inputs.approval_mode == 'destructive' && needs.prepare.outputs.has_destructive == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ inputs.environment }}
     outputs:
       approved: ${{ steps.check.outputs.approved }}
@@ -177,6 +197,35 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::warning::Not deployed. Waiting for an approver to run the Approve and deploy workflow for $TARGET_ENV."
 
+      - name: Tell the approvers
+        if: steps.check.outputs.approved == 'false' && github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APPROVERS: ${{ vars.APPROVERS }}
+          TARGET_ENV: ${{ inputs.environment }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # The run itself finishes green, so comment on the merged pull request and
+          # mention the approvers. GitHub notifies anyone who is mentioned.
+          PR=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          WHO=$(echo "$APPROVERS" | tr -d ' ' | tr ',' '\n' | sed '/^$/d; s/^/@/' | paste -sd ' ' -)
+          BODY=$(mktemp)
+          {
+            echo "### Waiting for approval: $TARGET_ENV"
+            echo
+            echo "These changes are validated but **not deployed** to $TARGET_ENV."
+            echo "$WHO: to deploy, open **Actions**, choose **Approve and deploy**, run it from \`$BRANCH\` and pick $TARGET_ENV."
+            echo
+            echo "Validation run: $RUN_URL"
+          } > "$BODY"
+          if [ -n "$PR" ]; then
+            gh pr comment "$PR" --body-file "$BODY"
+          else
+            echo "No pull request found for this commit, so no comment was posted."
+          fi
+
   deploy:
     name: "Deploy to ${{ inputs.environment }}"
     needs: [prepare, approve, approve_manual]
@@ -185,20 +234,20 @@ jobs:
       (needs.approve.result == 'success' || needs.approve.result == 'skipped') &&
       (needs.approve_manual.result == 'skipped' ||
        (needs.approve_manual.result == 'success' && needs.approve_manual.outputs.approved == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: ${{ inputs.environment }}
     outputs:
       deployed: ${{ steps.result.outputs.deployed }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up runner
         uses: ./.github/actions/setup-runner
 
       - name: Get the delta
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: delta-${{ inputs.environment }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: delta/

@@ -27,9 +27,11 @@ jobs:
       release_tag_prefix: "release-"
     secrets: inherit
 
+  # Runs whenever main moves and production did not fail, so pipeline-only changes
+  # (nothing to deploy) and hotfixes still reach the other branches.
   backsync:
     needs: deploy_production
-    if: needs.deploy_production.outputs.deployed == 'true'
+    if: needs.deploy_production.result == 'success'
     uses: ./.github/workflows/reusable-backsync.yml
     with:
       source_branch: "main"
