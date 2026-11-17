@@ -1,0 +1,13 @@
+{
+  "defaultEnv": "regression",
+  "browsers": [
+    "chromium"
+  ],
+  "workstreams": [
+    {
+      "name": "SAMPLE",
+      "seed": true,
+      "serialTests": "journeys[\\\\/].*\\.test\\.ts"
+    }
+  ]
+}

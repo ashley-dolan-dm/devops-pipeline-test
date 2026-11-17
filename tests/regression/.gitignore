@@ -1,0 +1,23 @@
+# Run output
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+discovery-output/
+
+# Saved logins, created and deleted during each run
+tests/**/.auth/
+
+# Secrets. Never commit these.
+.env.keys
+**/.envx/.env.keys
+*.key
+*.pem
+
+# Editors and notes
+.DS_Store
+notes/
+
+# Encrypted env files are committed (the root .gitignore ignores .env.*). The keys file never is.
+!**/.envx/.env.*
+**/.envx/.env.keys

@@ -37,14 +37,14 @@ permissions:
 jobs:
   validate:
     name: "Validate against ${{ inputs.environment }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     environment: ${{ inputs.environment }}
     outputs:
       has_destructive: ${{ steps.delta.outputs.has_destructive }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

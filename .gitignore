@@ -6,8 +6,8 @@ deploy-options.json
 
 # Pipeline output
 /delta/
-test-results/
-playwright-report/
+/test-results/
+/playwright-report/
 
 # Keys and secrets. Never commit these.
 *.key

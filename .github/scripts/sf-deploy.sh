@@ -23,6 +23,8 @@ case "$MODE" in
           --test-level "$TEST_LEVEL" --ignore-conflicts --async --json)
     if [ -f "$DESTRUCTIVE" ] && grep -q "<members>" "$DESTRUCTIVE"; then
       ARGS+=(--post-destructive-changes "$DESTRUCTIVE")
+      # A component that is already gone (for example from an org shared by two
+      # environments) is then a warning, not a failure.
       ARGS+=(--ignore-warnings)
     fi
     if [ "$MODE" = "validate" ]; then
@@ -38,6 +40,12 @@ case "$MODE" in
     ;;
 esac
 
+if [ -f "$DESTRUCTIVE" ] && grep -q "<members>" "$DESTRUCTIVE"; then
+  # Quick deploy carries the deletions from the validated job, so say so in the log.
+  echo "This deployment deletes $(grep -c "<members>" "$DESTRUCTIVE") component(s):"
+  python3 .github/scripts/summarise_manifest.py "$DESTRUCTIVE" "Deleted components" || true
+  echo
+fi
 echo "Running: sf ${ARGS[*]}"
 START_JSON=$(sf "${ARGS[@]}" 2>/dev/null)
 ID=$(echo "$START_JSON" | jq -r '.result.id // empty')

@@ -9,13 +9,14 @@ runs:
   using: composite
   steps:
     - name: Install Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
+        package-manager-cache: false
         node-version: "22"
 
     - name: Install Java (for Code Analyzer)
       if: inputs.code_analyzer == 'true'
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         distribution: temurin
         java-version: "17"
@@ -25,10 +26,10 @@ runs:
       env:
         CODE_ANALYZER: ${{ inputs.code_analyzer }}
       run: |
-        npm install --global @salesforce/cli@latest
-        echo y | sf plugins install sfdx-git-delta@latest
+        npm install --global @salesforce/cli@2.158.7
+        echo y | sf plugins install sfdx-git-delta@6.45.1
         if [ "$CODE_ANALYZER" = "true" ]; then
-          echo y | sf plugins install code-analyzer@latest
+          echo y | sf plugins install code-analyzer@5.16.0
         fi
         sf --version
         sf plugins
